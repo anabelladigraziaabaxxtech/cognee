@@ -2,6 +2,7 @@ import warnings
 
 from cognee.shared.logging_utils import get_logger
 
+from .authorized_proxy import maybe_wrap_vector_engine
 from .config import get_vectordb_context_config
 from .create_vector_engine import create_vector_engine
 
@@ -75,8 +76,9 @@ class _VectorEngineHandle:
             object.__setattr__(self, "_pinned", None)
             del pinned
         engine = create_vector_engine(**self._config)
-        object.__setattr__(self, "_pinned", engine)
-        return engine
+        wrapped = maybe_wrap_vector_engine(engine)
+        object.__setattr__(self, "_pinned", wrapped)
+        return wrapped
 
     @property
     def __class__(self):

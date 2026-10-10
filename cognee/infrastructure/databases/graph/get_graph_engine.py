@@ -10,6 +10,7 @@ from cognee.infrastructure.databases.utils.engine_cache_ops import EngineCacheOp
 from cognee.shared.logging_utils import get_logger
 from cognee.shared.lru_cache import DATABASE_MAX_LRU_CACHE_SIZE
 
+from .authorized_proxy import maybe_wrap_graph_engine
 from .config import get_graph_context_config
 from .graph_db_interface import GraphDBInterface
 from .kuzu.adapter import DEFAULT_KUZU_BUFFER_POOL_SIZE, DEFAULT_KUZU_MAX_DB_SIZE
@@ -155,8 +156,9 @@ class _GraphEngineHandle:
             self._release_stale_pin(pinned)
             pinned = None
         engine = create_graph_engine(**self._config)
-        object.__setattr__(self, "_pinned", engine)
-        return engine
+        wrapped = maybe_wrap_graph_engine(engine)
+        object.__setattr__(self, "_pinned", wrapped)
+        return wrapped
 
     async def _aengine(self):
         """Async resolution used at initialization. Goes through the cache's
@@ -169,8 +171,9 @@ class _GraphEngineHandle:
             self._release_stale_pin(pinned)
             pinned = None
         engine = await acreate_graph_engine(**self._config)
-        object.__setattr__(self, "_pinned", engine)
-        return engine
+        wrapped = maybe_wrap_graph_engine(engine)
+        object.__setattr__(self, "_pinned", wrapped)
+        return wrapped
 
     async def _ensure_initialized(self):
         engine = await self._aengine()
