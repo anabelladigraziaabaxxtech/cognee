@@ -1,3 +1,5 @@
+import base64
+import json
 import os
 from typing import Any
 
@@ -119,6 +121,12 @@ class AuthorizedGraphEngineProxy:
                 return
             raise GraphAuthorizationError(message)
 
+        credential_for_authorize = await _resolve_authorization_credential(
+            gateway_url=gateway_url,
+            agent_did=agent_did,
+            credential=credential,
+        )
+
         effective_constraints = dict(constraints)
         inferred_domain = _infer_domain_from_constraints(effective_constraints)
         if inferred_domain:
@@ -127,7 +135,7 @@ class AuthorizedGraphEngineProxy:
 
         payload = {
             "agentDid": agent_did,
-            "credential": credential,
+            "credential": credential_for_authorize,
             "plane": "graph",
             "action": action,
             "resource": resource,
@@ -170,6 +178,43 @@ class AuthorizedGraphEngineProxy:
                 )
                 return
             raise
+
+
+async def _resolve_authorization_credential(*, gateway_url: str, agent_did: str, credential: str) -> str:
+    if _looks_like_vp_jwt(credential):
+        return credential
+
+    payload = {
+        "agentDid": agent_did,
+        "vcJwt": credential,
+        "lifetime": "60s",
+    }
+
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        response = await client.post(f"{gateway_url}/demo/presentations", json=payload)
+    body = response.json()
+    presentation = body.get("presentation")
+    if isinstance(presentation, str) and presentation.strip():
+        return presentation
+
+    raise GraphAuthorizationError("Failed to mint VP for authorization from vcJwt")
+
+
+def _looks_like_vp_jwt(jwt_token: str) -> bool:
+    try:
+        parts = jwt_token.split(".")
+        if len(parts) < 2:
+            return False
+        payload_b64 = parts[1]
+        padding = "=" * (-len(payload_b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_b64 + padding).decode("utf-8"))
+        vp = payload.get("vp")
+        if not isinstance(vp, dict):
+            return False
+        types = vp.get("type")
+        return isinstance(types, list) and "VerifiablePresentation" in types
+    except Exception:
+        return False
 
 
 def maybe_wrap_graph_engine(graph_engine: Any) -> Any:
